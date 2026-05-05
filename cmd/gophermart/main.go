@@ -5,6 +5,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 	"github.com/timaogurtzova/gophermart/internal/config"
+	httpserver "github.com/timaogurtzova/gophermart/internal/http"
 )
 
 // main запускает HTTP API накопительной системы лояльности «Гофермарт».
@@ -27,6 +28,11 @@ func run() error {
 		return fmt.Errorf("загрузка конфигурации: %w", err)
 	}
 
-	log.Info().Str("addr", cfg.Server.Address).Msg("gophermart service configured")
+	router := httpserver.NewRouter(httpserver.RouterHandlers{})
+	server := httpserver.NewServer(cfg, router)
+	if err := server.Run(); err != nil {
+		return fmt.Errorf("запуск HTTP-сервера: %w", err)
+	}
+
 	return nil
 }

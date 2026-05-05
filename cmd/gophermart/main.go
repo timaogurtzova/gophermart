@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
-	"log"
+
+	"github.com/rs/zerolog/log"
+	"github.com/timaogurtzova/gophermart/internal/config"
 )
 
 // main запускает HTTP API накопительной системы лояльности «Гофермарт».
@@ -14,12 +16,17 @@ import (
 // положенного вознаграждения на счёт пользователя.
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		log.Fatal().Err(err).Msg("application stopped with error")
 	}
 }
 
 // run выполняет запуск приложения.
 func run() error {
-	fmt.Println("сервис gophermart запущен")
+	cfg, err := config.LoadConfig()
+	if err != nil {
+		return fmt.Errorf("загрузка конфигурации: %w", err)
+	}
+
+	log.Info().Str("addr", cfg.Server.Address).Msg("gophermart service configured")
 	return nil
 }

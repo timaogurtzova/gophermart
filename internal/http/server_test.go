@@ -1,6 +1,9 @@
 package httpserver_test
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -127,10 +130,155 @@ func TestServerRoutingUsesNotImplementedFallbackForEmptyHandlers(t *testing.T) {
 	assert.Equal(t, "not implemented", strings.TrimSpace(recorder.Body.String()))
 }
 
+func TestGzipRequestMiddlewareDecompressesRequestBody(t *testing.T) {
+	var requestBody string
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		UploadOrder: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body, err := io.ReadAll(r.Body)
+			assert.NoError(t, err)
+			requestBody = string(body)
+
+			w.WriteHeader(http.StatusAccepted)
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/user/orders", bytes.NewReader(gzipData(t, "12345678903")))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Content-Encoding", "gzip")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusAccepted, recorder.Code)
+	assert.Equal(t, "12345678903", requestBody)
+}
+
+func TestGzipRequestMiddlewareReturnsBadRequestForUnsupportedEncoding(t *testing.T) {
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		UploadOrder: namedHandler("upload-order", http.StatusAccepted, new(string)),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/user/orders", strings.NewReader("12345678903"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Content-Encoding", "deflate")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Equal(t, "bad request", strings.TrimSpace(recorder.Body.String()))
+}
+
+func TestGzipRequestMiddlewareReturnsBadRequestForBrokenGzip(t *testing.T) {
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		UploadOrder: namedHandler("upload-order", http.StatusAccepted, new(string)),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/user/orders", strings.NewReader("not-a-gzip-stream"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Content-Encoding", "gzip")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Equal(t, "bad request", strings.TrimSpace(recorder.Body.String()))
+}
+
+func TestGzipRequestMiddlewareReturnsBadRequestForMultipleEncodings(t *testing.T) {
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		UploadOrder: namedHandler("upload-order", http.StatusAccepted, new(string)),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/user/orders", strings.NewReader("12345678903"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Content-Encoding", "gzip, deflate")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusBadRequest, recorder.Code)
+	assert.Equal(t, "bad request", strings.TrimSpace(recorder.Body.String()))
+}
+
+func TestGzipResponseMiddlewareCompressesJSONResponse(t *testing.T) {
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		GetBalance: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"current":500.5,"withdrawn":42}`))
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/user/balance", nil)
+	req.Header.Set("Accept-Encoding", "gzip")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	assert.Equal(t, "gzip", res.Header.Get("Content-Encoding"))
+	assert.Contains(t, res.Header.Values("Vary"), "Accept-Encoding")
+	assert.Equal(t, `{"current":500.5,"withdrawn":42}`, ungzipBody(t, res.Body))
+}
+
+func TestGzipResponseMiddlewareSkipsUnsupportedContentType(t *testing.T) {
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		UploadOrder: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte("accepted"))
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/user/orders", strings.NewReader("12345678903"))
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Accept-Encoding", "gzip")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	res := recorder.Result()
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	assert.NoError(t, err)
+
+	assert.Empty(t, res.Header.Get("Content-Encoding"))
+	assert.Equal(t, "accepted", string(body))
+}
+
 func namedHandler(name string, status int, called *string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		*called = name
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(name))
 	}
+}
+
+func gzipData(t *testing.T, data string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	writer := gzip.NewWriter(&buf)
+	_, err := writer.Write([]byte(data))
+	assert.NoError(t, err)
+	assert.NoError(t, writer.Close())
+
+	return buf.Bytes()
+}
+
+func ungzipBody(t *testing.T, body io.Reader) string {
+	t.Helper()
+
+	reader, err := gzip.NewReader(body)
+	assert.NoError(t, err)
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	assert.NoError(t, err)
+
+	return string(data)
 }

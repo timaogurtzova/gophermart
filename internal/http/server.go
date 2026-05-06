@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog/log"
 	"github.com/timaogurtzova/gophermart/internal/config"
+	httpmiddleware "github.com/timaogurtzova/gophermart/internal/http/middleware"
 )
 
 // Server инкапсулирует HTTP-сервер накопительной системы лояльности.
@@ -44,6 +46,9 @@ func NewServer(cfg *config.Configuration, router http.Handler) *Server {
 // NewRouter регистрирует HTTP-маршруты накопительной системы лояльности.
 func NewRouter(handlers RouterHandlers) http.Handler {
 	r := chi.NewRouter()
+
+	r.Use(httpmiddleware.GunzipRequest)
+	r.Use(chimiddleware.Compress(5, "application/json", "text/html"))
 
 	r.Post("/api/user/register", handlerOrNotImplemented(handlers.Register))
 	r.Post("/api/user/login", handlerOrNotImplemented(handlers.Login))

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/stretchr/testify/assert"
 	httpserver "github.com/timaogurtzova/gophermart/internal/http"
 )
@@ -128,6 +130,59 @@ func TestServerRoutingUsesNotImplementedFallbackForEmptyHandlers(t *testing.T) {
 
 	assert.Equal(t, http.StatusNotImplemented, recorder.Code)
 	assert.Equal(t, "not implemented", strings.TrimSpace(recorder.Body.String()))
+}
+
+func TestLoggingMiddlewareLogsRequestAndResponseData(t *testing.T) {
+	var buf bytes.Buffer
+	oldLogger := log.Logger
+	log.Logger = zerolog.New(&buf).Level(zerolog.InfoLevel)
+	t.Cleanup(func() {
+		log.Logger = oldLogger
+	})
+
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		Register: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("register"))
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/user/register?trace=1", strings.NewReader("body"))
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	logOutput := buf.String()
+	assert.Contains(t, logOutput, `"level":"info"`)
+	assert.Contains(t, logOutput, `"uri":"/api/user/register?trace=1"`)
+	assert.Contains(t, logOutput, `"method":"POST"`)
+	assert.Contains(t, logOutput, `"duration":"`)
+	assert.Contains(t, logOutput, `"status":200`)
+	assert.Contains(t, logOutput, `"size":8`)
+	assert.Contains(t, logOutput, `"message":"HTTP request completed"`)
+}
+
+func TestLoggingMiddlewareLogsImplicitStatusCode(t *testing.T) {
+	var buf bytes.Buffer
+	oldLogger := log.Logger
+	log.Logger = zerolog.New(&buf).Level(zerolog.InfoLevel)
+	t.Cleanup(func() {
+		log.Logger = oldLogger
+	})
+
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		Register: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte("register"))
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/user/register", strings.NewReader("body"))
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, buf.String(), `"status":200`)
 }
 
 func TestGzipRequestMiddlewareDecompressesRequestBody(t *testing.T) {

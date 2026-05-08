@@ -47,6 +47,7 @@ func NewServer(cfg *config.Configuration, router http.Handler) *Server {
 func NewRouter(handlers RouterHandlers) http.Handler {
 	r := chi.NewRouter()
 
+	r.Use(httpmiddleware.Logging)
 	r.Use(httpmiddleware.GunzipRequest)
 	r.Use(chimiddleware.Compress(5, "application/json", "text/html"))
 

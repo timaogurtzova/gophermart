@@ -5,9 +5,13 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog/log"
+	"github.com/timaogurtzova/gophermart/internal/auth"
 	"github.com/timaogurtzova/gophermart/internal/config"
 	httpserver "github.com/timaogurtzova/gophermart/internal/http"
+	"github.com/timaogurtzova/gophermart/internal/http/handler"
 	"github.com/timaogurtzova/gophermart/internal/postgres"
+	"github.com/timaogurtzova/gophermart/internal/repository"
+	"github.com/timaogurtzova/gophermart/internal/service"
 )
 
 // main запускает HTTP API накопительной системы лояльности «Гофермарт».
@@ -42,7 +46,27 @@ func run() error {
 		}()
 	}
 
-	router := httpserver.NewRouter(httpserver.RouterHandlers{})
+	userRepository, err := repository.NewUserRepository(database.SQLDB())
+	if err != nil {
+		return fmt.Errorf("initialize user repository: %w", err)
+	}
+
+	authService := service.NewAuthService(userRepository)
+	authSecret, err := auth.NewRandomSecret(32)
+	if err != nil {
+		return fmt.Errorf("generate auth secret: %w", err)
+	}
+
+	authenticator, err := auth.NewAuthenticator(authSecret)
+	if err != nil {
+		return fmt.Errorf("initialize authenticator: %w", err)
+	}
+
+	authHandler := handler.NewAuthHandler(authService, authenticator)
+	router := httpserver.NewRouter(httpserver.RouterHandlers{
+		Register: authHandler.Register,
+		Login:    authHandler.Login,
+	})
 	server := httpserver.NewServer(cfg, router)
 	if err := server.Run(); err != nil {
 		return fmt.Errorf("run http server: %w", err)

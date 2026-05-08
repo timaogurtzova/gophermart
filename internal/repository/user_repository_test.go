@@ -1,0 +1,16 @@
+package repository_test
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/timaogurtzova/gophermart/internal/repository"
+)
+
+func TestNewUserRepository(t *testing.T) {
+	store, err := repository.NewUserRepository(nil)
+	require.Error(t, err)
+	assert.Nil(t, store)
+	assert.ErrorIs(t, err, repository.ErrDatabaseNotConfigured)
+}

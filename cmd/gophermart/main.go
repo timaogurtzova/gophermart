@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/rs/zerolog/log"
 	"github.com/timaogurtzova/gophermart/internal/config"
 	httpserver "github.com/timaogurtzova/gophermart/internal/http"
+	"github.com/timaogurtzova/gophermart/internal/postgres"
 )
 
 // main запускает HTTP API накопительной системы лояльности «Гофермарт».
@@ -25,13 +27,25 @@ func main() {
 func run() error {
 	cfg, err := config.LoadConfig()
 	if err != nil {
-		return fmt.Errorf("загрузка конфигурации: %w", err)
+		return fmt.Errorf("load config: %w", err)
+	}
+
+	database, err := postgres.Open(context.Background(), cfg.Database)
+	if err != nil {
+		return fmt.Errorf("initialize database connection: %w", err)
+	}
+	if database != nil {
+		defer func() {
+			if err := database.Close(); err != nil {
+				log.Error().Err(err).Msg("Error closing database connection")
+			}
+		}()
 	}
 
 	router := httpserver.NewRouter(httpserver.RouterHandlers{})
 	server := httpserver.NewServer(cfg, router)
 	if err := server.Run(); err != nil {
-		return fmt.Errorf("запуск HTTP-сервера: %w", err)
+		return fmt.Errorf("run http server: %w", err)
 	}
 
 	return nil

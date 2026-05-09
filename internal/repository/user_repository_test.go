@@ -14,3 +14,10 @@ func TestNewUserRepository(t *testing.T) {
 	assert.Nil(t, store)
 	assert.ErrorIs(t, err, repository.ErrDatabaseNotConfigured)
 }
+
+func TestNewOrderRepository(t *testing.T) {
+	store, err := repository.NewOrderRepository(nil)
+	require.Error(t, err)
+	assert.Nil(t, store)
+	assert.ErrorIs(t, err, repository.ErrDatabaseNotConfigured)
+}

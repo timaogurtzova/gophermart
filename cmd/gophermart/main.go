@@ -50,8 +50,13 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize user repository: %w", err)
 	}
+	orderRepository, err := repository.NewOrderRepository(database.SQLDB())
+	if err != nil {
+		return fmt.Errorf("initialize order repository: %w", err)
+	}
 
 	authService := service.NewAuthService(userRepository)
+	orderService := service.NewOrderUploadService(orderRepository)
 	authSecret, err := auth.NewRandomSecret(32)
 	if err != nil {
 		return fmt.Errorf("generate auth secret: %w", err)
@@ -63,9 +68,11 @@ func run() error {
 	}
 
 	authHandler := handler.NewAuthHandler(authService, authenticator)
+	orderHandler := handler.NewOrderHandler(orderService, authenticator)
 	router := httpserver.NewRouter(httpserver.RouterHandlers{
-		Register: authHandler.Register,
-		Login:    authHandler.Login,
+		Register:    authHandler.Register,
+		Login:       authHandler.Login,
+		UploadOrder: orderHandler.Upload,
 	})
 	server := httpserver.NewServer(cfg, router)
 	if err := server.Run(); err != nil {

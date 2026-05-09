@@ -10,6 +10,7 @@ import (
 const (
 	maxBodySize     = 2048
 	contentTypeJSON = "application/json"
+	contentTypeText = "text/plain"
 )
 
 func hasContentType(r *http.Request, contentType string) bool {

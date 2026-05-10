@@ -15,4 +15,10 @@ type UserService interface {
 // OrderService описывает контракт сервиса загрузки номеров заказов.
 type OrderService interface {
 	UploadOrder(ctx context.Context, userID int64, number string) error
+	GetOrders(ctx context.Context, userID int64) ([]model.Order, error)
+}
+
+// BalanceService описывает контракт сервиса получения накопительного счёта.
+type BalanceService interface {
+	GetBalance(ctx context.Context, userID int64) (model.Balance, error)
 }

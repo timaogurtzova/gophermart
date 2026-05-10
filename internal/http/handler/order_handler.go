@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -65,4 +66,44 @@ func (h *OrderHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// GetOrders возвращает загруженные пользователем номера заказов.
+func (h *OrderHandler) GetOrders(w http.ResponseWriter, r *http.Request) {
+	userID, err := h.auth.UserID(r)
+	if err != nil {
+		if errors.Is(err, auth.ErrUserIDMissing) {
+			writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	orders, err := h.service.GetOrders(r.Context(), userID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	if len(orders) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	response := make([]orderResponse, len(orders))
+	for i, order := range orders {
+		response[i] = newOrderResponse(order)
+	}
+
+	responseBody, err := json.Marshal(response)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	w.Header().Set("Content-Type", contentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+	writeResponse(w, responseBody)
 }

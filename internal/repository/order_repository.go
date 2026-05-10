@@ -25,6 +25,13 @@ const insertOrderQuery = `
 	LIMIT 1
 `
 
+const selectOrdersByUserIDQuery = `
+	SELECT id, user_id, number, status, accrual::text, uploaded_at, updated_at
+	FROM orders
+	WHERE user_id = $1
+	ORDER BY uploaded_at DESC
+`
+
 var (
 	// ErrOrderAlreadyUploadedByUser возвращается, когда заказ уже загружен этим пользователем.
 	ErrOrderAlreadyUploadedByUser = errors.New("order already uploaded by user")
@@ -35,6 +42,7 @@ var (
 // OrderRepository описывает контракт хранилища заказов.
 type OrderRepository interface {
 	Upload(ctx context.Context, userID int64, number string) error
+	FindByUserID(ctx context.Context, userID int64) ([]model.Order, error)
 }
 
 // OrderDBRepository хранит загруженные номера заказов в PostgreSQL.
@@ -69,4 +77,48 @@ func (r *OrderDBRepository) Upload(ctx context.Context, userID int64, number str
 	}
 
 	return ErrOrderAlreadyUploadedByAnotherUser
+}
+
+// FindByUserID возвращает заказы пользователя от новых к старым.
+func (r *OrderDBRepository) FindByUserID(ctx context.Context, userID int64) ([]model.Order, error) {
+	rows, err := r.db.QueryContext(ctx, selectOrdersByUserIDQuery, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	orders := make([]model.Order, 0)
+	for rows.Next() {
+		var order model.Order
+		var accrual sql.NullString
+
+		if err := rows.Scan(
+			&order.ID,
+			&order.UserID,
+			&order.Number,
+			&order.Status,
+			&accrual,
+			&order.UploadedAt,
+			&order.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		if accrual.Valid {
+			points, err := model.NewPoints(accrual.String)
+			if err != nil {
+				return nil, err
+			}
+
+			order.Accrual = &points
+		}
+
+		orders = append(orders, order)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return orders, nil
 }

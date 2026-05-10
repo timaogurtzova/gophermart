@@ -1,12 +1,62 @@
 package model
 
-import "time"
+import (
+	"database/sql/driver"
+	"time"
+
+	"github.com/shopspring/decimal"
+)
 
 // OrderStatus описывает статус обработки расчёта по номеру заказа.
 type OrderStatus string
 
-// Points хранит значение баллов из PostgreSQL NUMERIC без преобразования в float64.
-type Points string
+// Points хранит значение PostgreSQL NUMERIC как decimal без преобразования в float64.
+//
+// Это защищает баланс от ошибок округления: начисления и списания могут
+// выполняться атомарными SQL-операциями с NUMERIC, а если расчёты появятся в Go,
+// доменная модель уже не будет зависеть от float64.
+type Points decimal.Decimal
+
+// NewPoints создаёт значение баллов из строкового представления NUMERIC.
+func NewPoints(value string) (Points, error) {
+	points, err := decimal.NewFromString(value)
+	if err != nil {
+		return Points{}, err
+	}
+
+	return Points(points), nil
+}
+
+// String возвращает строковое представление баллов без незначащих нулей.
+func (p Points) String() string {
+	points := decimal.Decimal(p)
+	if points.Sign() == 0 {
+		return "0"
+	}
+
+	return points.String()
+}
+
+// MarshalJSON сериализует баллы как JSON-число.
+func (p Points) MarshalJSON() ([]byte, error) {
+	return []byte(p.String()), nil
+}
+
+// Scan читает значение NUMERIC из database/sql.
+func (p *Points) Scan(value any) error {
+	var points decimal.Decimal
+	if err := points.Scan(value); err != nil {
+		return err
+	}
+
+	*p = Points(points)
+	return nil
+}
+
+// Value возвращает значение баллов для записи через database/sql.
+func (p Points) Value() (driver.Value, error) {
+	return p.String(), nil
+}
 
 const (
 	// OrderStatusNew означает, что заказ загружен в систему, но не попал в обработку.

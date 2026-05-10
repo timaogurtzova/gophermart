@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/timaogurtzova/gophermart/internal/model"
 	"github.com/timaogurtzova/gophermart/internal/repository"
 )
 
@@ -19,7 +20,7 @@ var (
 	ErrOrderAlreadyUploadedByAnotherUser = errors.New("order already uploaded by another user")
 )
 
-// OrderUploadService реализует загрузку номеров заказов.
+// OrderUploadService реализует загрузку и чтение номеров заказов.
 type OrderUploadService struct {
 	orders repository.OrderRepository
 }
@@ -53,6 +54,11 @@ func (s *OrderUploadService) UploadOrder(ctx context.Context, userID int64, numb
 	}
 
 	return nil
+}
+
+// GetOrders возвращает заказы пользователя от новых к старым.
+func (s *OrderUploadService) GetOrders(ctx context.Context, userID int64) ([]model.Order, error) {
+	return s.orders.FindByUserID(ctx, userID)
 }
 
 func isDigitsOnly(value string) bool {

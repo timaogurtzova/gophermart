@@ -156,6 +156,14 @@ func newTestAuthHandler(t *testing.T, userService service.UserService) *handler.
 	return handler.NewAuthHandler(userService, authenticator)
 }
 
+func newTestPoints(t *testing.T, value string) model.Points {
+	t.Helper()
+
+	points, err := model.NewPoints(value)
+	require.NoError(t, err)
+	return points
+}
+
 type fakeUserService struct {
 	register func(ctx context.Context, login, password string) (model.User, error)
 	login    func(ctx context.Context, login, password string) (model.User, error)

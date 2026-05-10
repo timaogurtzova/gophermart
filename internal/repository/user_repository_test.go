@@ -21,3 +21,10 @@ func TestNewOrderRepository(t *testing.T) {
 	assert.Nil(t, store)
 	assert.ErrorIs(t, err, repository.ErrDatabaseNotConfigured)
 }
+
+func TestNewBalanceRepository(t *testing.T) {
+	store, err := repository.NewBalanceRepository(nil)
+	require.Error(t, err)
+	assert.Nil(t, store)
+	assert.ErrorIs(t, err, repository.ErrDatabaseNotConfigured)
+}

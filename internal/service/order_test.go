@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/timaogurtzova/gophermart/internal/model"
 	"github.com/timaogurtzova/gophermart/internal/repository"
 	"github.com/timaogurtzova/gophermart/internal/service"
 )
@@ -105,8 +106,31 @@ func TestOrderUploadServiceUploadOrder(t *testing.T) {
 	}
 }
 
+func TestOrderUploadServiceGetOrders(t *testing.T) {
+	wantOrders := []model.Order{
+		{
+			ID:     1,
+			UserID: 42,
+			Number: "9278923470",
+			Status: model.OrderStatusProcessed,
+		},
+	}
+	orders := &fakeOrderRepository{
+		findByUserID: func(_ context.Context, userID int64) ([]model.Order, error) {
+			assert.Equal(t, int64(42), userID)
+			return wantOrders, nil
+		},
+	}
+	svc := service.NewOrderUploadService(orders)
+
+	gotOrders, err := svc.GetOrders(context.Background(), 42)
+	require.NoError(t, err)
+	assert.Equal(t, wantOrders, gotOrders)
+}
+
 type fakeOrderRepository struct {
-	upload func(ctx context.Context, userID int64, number string) error
+	upload       func(ctx context.Context, userID int64, number string) error
+	findByUserID func(ctx context.Context, userID int64) ([]model.Order, error)
 }
 
 func (r *fakeOrderRepository) Upload(ctx context.Context, userID int64, number string) error {
@@ -115,4 +139,12 @@ func (r *fakeOrderRepository) Upload(ctx context.Context, userID int64, number s
 	}
 
 	return r.upload(ctx, userID, number)
+}
+
+func (r *fakeOrderRepository) FindByUserID(ctx context.Context, userID int64) ([]model.Order, error) {
+	if r.findByUserID == nil {
+		return nil, nil
+	}
+
+	return r.findByUserID(ctx, userID)
 }

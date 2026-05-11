@@ -42,6 +42,22 @@ func (p Points) MarshalJSON() ([]byte, error) {
 	return []byte(p.String()), nil
 }
 
+// UnmarshalJSON читает баллы из JSON-числа.
+func (p *Points) UnmarshalJSON(data []byte) error {
+	var points decimal.Decimal
+	if err := points.UnmarshalJSON(data); err != nil {
+		return err
+	}
+
+	*p = Points(points)
+	return nil
+}
+
+// IsPositive сообщает, что значение баллов больше нуля.
+func (p Points) IsPositive() bool {
+	return decimal.Decimal(p).Sign() > 0
+}
+
 // Scan читает значение NUMERIC из database/sql.
 func (p *Points) Scan(value any) error {
 	var points decimal.Decimal

@@ -29,6 +29,15 @@ func TestPointsValue(t *testing.T) {
 	assert.Equal(t, "42", value)
 }
 
+func TestPointsUnmarshalJSON(t *testing.T) {
+	var points model.Points
+
+	err := json.Unmarshal([]byte("751.25"), &points)
+	require.NoError(t, err)
+
+	assert.Equal(t, "751.25", points.String())
+}
+
 func TestPointsZeroValue(t *testing.T) {
 	var points model.Points
 

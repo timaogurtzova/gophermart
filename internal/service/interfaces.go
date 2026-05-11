@@ -18,7 +18,9 @@ type OrderService interface {
 	GetOrders(ctx context.Context, userID int64) ([]model.Order, error)
 }
 
-// BalanceService описывает контракт сервиса получения накопительного счёта.
+// BalanceService описывает контракт сервиса накопительного счёта и списаний.
 type BalanceService interface {
 	GetBalance(ctx context.Context, userID int64) (model.Balance, error)
+	Withdraw(ctx context.Context, userID int64, orderNumber string, sum model.Points) error
+	GetWithdrawals(ctx context.Context, userID int64) ([]model.Withdrawal, error)
 }

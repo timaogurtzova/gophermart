@@ -61,7 +61,7 @@ func run() error {
 
 	authService := service.NewAuthService(userRepository)
 	orderService := service.NewOrderUploadService(orderRepository)
-	balanceService := service.NewBalanceReadService(balanceRepository)
+	balanceService := service.NewBalanceAccountService(balanceRepository)
 	authSecret, err := auth.NewRandomSecret(32)
 	if err != nil {
 		return fmt.Errorf("generate auth secret: %w", err)
@@ -76,11 +76,13 @@ func run() error {
 	orderHandler := handler.NewOrderHandler(orderService, authenticator)
 	balanceHandler := handler.NewBalanceHandler(balanceService, authenticator)
 	router := httpserver.NewRouter(httpserver.RouterHandlers{
-		Register:    authHandler.Register,
-		Login:       authHandler.Login,
-		UploadOrder: orderHandler.Upload,
-		GetOrders:   orderHandler.GetOrders,
-		GetBalance:  balanceHandler.GetBalance,
+		Register:       authHandler.Register,
+		Login:          authHandler.Login,
+		UploadOrder:    orderHandler.Upload,
+		GetOrders:      orderHandler.GetOrders,
+		GetBalance:     balanceHandler.GetBalance,
+		Withdraw:       balanceHandler.Withdraw,
+		GetWithdrawals: balanceHandler.GetWithdrawals,
 	})
 	server := httpserver.NewServer(cfg, router)
 	if err := server.Run(); err != nil {

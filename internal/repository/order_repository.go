@@ -32,6 +32,39 @@ const selectOrdersByUserIDQuery = `
 	ORDER BY uploaded_at DESC
 `
 
+const selectOrdersForProcessingQuery = `
+	SELECT id, user_id, number, status, accrual::text, uploaded_at, updated_at
+	FROM orders
+	WHERE status IN ($1, $2)
+	ORDER BY uploaded_at ASC
+	LIMIT $3
+`
+
+const updateOrderStatusQuery = `
+	UPDATE orders
+	SET status = $2,
+		updated_at = NOW()
+	WHERE id = $1
+	  AND status IN ($3, $4)
+`
+
+const updateOrderProcessedQuery = `
+	UPDATE orders
+	SET status = $2,
+		accrual = $3,
+		updated_at = NOW()
+	WHERE id = $1
+	  AND status IN ($4, $5)
+	RETURNING user_id
+`
+
+const addBalanceAccrualQuery = `
+	UPDATE balances
+	SET current_balance = current_balance + $2,
+		updated_at = NOW()
+	WHERE user_id = $1
+`
+
 var (
 	// ErrOrderAlreadyUploadedByUser возвращается, когда заказ уже загружен этим пользователем.
 	ErrOrderAlreadyUploadedByUser = errors.New("order already uploaded by user")
@@ -43,6 +76,9 @@ var (
 type OrderRepository interface {
 	Upload(ctx context.Context, userID int64, number string) error
 	FindByUserID(ctx context.Context, userID int64) ([]model.Order, error)
+	FindForProcessing(ctx context.Context, limit int) ([]model.Order, error)
+	UpdateStatus(ctx context.Context, orderID int64, status model.OrderStatus) error
+	ApplyAccrual(ctx context.Context, orderID int64, accrual *model.Points) error
 }
 
 // OrderDBRepository хранит загруженные номера заказов в PostgreSQL.
@@ -87,6 +123,80 @@ func (r *OrderDBRepository) FindByUserID(ctx context.Context, userID int64) ([]m
 	}
 	defer rows.Close()
 
+	return scanOrders(rows)
+}
+
+// FindForProcessing возвращает заказы, которым ещё нужен расчёт начислений.
+func (r *OrderDBRepository) FindForProcessing(ctx context.Context, limit int) ([]model.Order, error) {
+	rows, err := r.db.QueryContext(
+		ctx,
+		selectOrdersForProcessingQuery,
+		model.OrderStatusNew,
+		model.OrderStatusProcessing,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanOrders(rows)
+}
+
+// UpdateStatus обновляет статус заказа без начисления баллов.
+func (r *OrderDBRepository) UpdateStatus(ctx context.Context, orderID int64, status model.OrderStatus) error {
+	_, err := r.db.ExecContext(
+		ctx,
+		updateOrderStatusQuery,
+		orderID,
+		status,
+		model.OrderStatusNew,
+		model.OrderStatusProcessing,
+	)
+	return err
+}
+
+// ApplyAccrual завершает обработку заказа и начисляет баллы на счёт пользователя.
+func (r *OrderDBRepository) ApplyAccrual(ctx context.Context, orderID int64, accrual *model.Points) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var accrualValue any
+	if accrual != nil {
+		accrualValue = *accrual
+	}
+
+	var userID int64
+	err = tx.QueryRowContext(
+		ctx,
+		updateOrderProcessedQuery,
+		orderID,
+		model.OrderStatusProcessed,
+		accrualValue,
+		model.OrderStatusNew,
+		model.OrderStatusProcessing,
+	).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return tx.Commit()
+		}
+
+		return err
+	}
+
+	if accrual != nil && accrual.IsPositive() {
+		if _, err = tx.ExecContext(ctx, addBalanceAccrualQuery, userID, *accrual); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func scanOrders(rows *sql.Rows) ([]model.Order, error) {
 	orders := make([]model.Order, 0)
 	for rows.Next() {
 		var order model.Order

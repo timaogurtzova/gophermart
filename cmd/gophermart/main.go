@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/rs/zerolog/log"
+	"github.com/timaogurtzova/gophermart/internal/accrual"
 	"github.com/timaogurtzova/gophermart/internal/auth"
 	"github.com/timaogurtzova/gophermart/internal/config"
 	httpserver "github.com/timaogurtzova/gophermart/internal/http"
@@ -75,6 +76,21 @@ func run() error {
 	authHandler := handler.NewAuthHandler(authService, authenticator)
 	orderHandler := handler.NewOrderHandler(orderService, authenticator)
 	balanceHandler := handler.NewBalanceHandler(balanceService, authenticator)
+
+	processorCtx, cancelProcessor := context.WithCancel(context.Background())
+	defer cancelProcessor()
+	if cfg.Accrual.IsConfigured() {
+		accrualClient, err := accrual.NewClient(*cfg.Accrual.Address)
+		if err != nil {
+			return fmt.Errorf("initialize accrual client: %w", err)
+		}
+
+		orderProcessor := service.NewOrderProcessor(orderRepository, accrualClient)
+		go orderProcessor.Run(processorCtx)
+	} else {
+		log.Warn().Msg("Accrual system address is not configured; order processing disabled")
+	}
+
 	router := httpserver.NewRouter(httpserver.RouterHandlers{
 		Register:       authHandler.Register,
 		Login:          authHandler.Login,

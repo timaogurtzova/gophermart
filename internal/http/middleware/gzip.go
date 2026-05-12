@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"compress/gzip"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -21,7 +22,10 @@ func (g *gzipBodyReadCloser) Read(p []byte) (int, error) {
 
 func (g *gzipBodyReadCloser) Close() error {
 	if err := g.reader.Close(); err != nil {
-		_ = g.body.Close()
+		if closeErr := g.body.Close(); closeErr != nil {
+			return errors.Join(err, closeErr)
+		}
+
 		return err
 	}
 

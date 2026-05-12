@@ -36,13 +36,11 @@ func Open(ctx context.Context, cfg config.DatabaseConfiguration) (*Database, err
 	}
 
 	if err := sqlDB.PingContext(ctx); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
+		return nil, closeAfterFailure(sqlDB, fmt.Errorf("ping database: %w", err))
 	}
 
 	if err := applyMigrations(sqlDB); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("apply migrations: %w", err)
+		return nil, closeAfterFailure(sqlDB, fmt.Errorf("apply migrations: %w", err))
 	}
 
 	return NewDatabase(sqlDB)
@@ -96,4 +94,12 @@ func applyMigrations(db *sql.DB) error {
 	}
 
 	return nil
+}
+
+func closeAfterFailure(db *sql.DB, err error) error {
+	if closeErr := db.Close(); closeErr != nil {
+		return errors.Join(err, fmt.Errorf("close database: %w", closeErr))
+	}
+
+	return err
 }

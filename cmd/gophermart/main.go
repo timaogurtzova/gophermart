@@ -39,13 +39,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("initialize database connection: %w", err)
 	}
-	if database != nil {
-		defer func() {
-			if err := database.Close(); err != nil {
-				log.Error().Err(err).Msg("Error closing database connection")
-			}
-		}()
-	}
+	defer func() {
+		if err := database.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close database connection")
+		}
+	}()
 
 	userRepository, err := repository.NewUserRepository(database.SQLDB())
 	if err != nil {

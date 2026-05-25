@@ -4,7 +4,6 @@ go 1.24.13
 
 require (
 	github.com/caarlos0/env/v11 v11.4.0
-	github.com/go-chi/chi/v5 v5.2.5
 	github.com/lib/pq v1.10.9
 	github.com/pressly/goose/v3 v3.24.3
 	github.com/rs/zerolog v1.34.0

@@ -1,7 +1,6 @@
 package config_test
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -133,33 +132,12 @@ func TestLoadConfigReturnsCLIParseError(t *testing.T) {
 func loadWithState(t *testing.T, args []string, envVars map[string]string) (*config.Configuration, error) {
 	t.Helper()
 
-	oldArgs := os.Args
-	os.Args = append([]string{"gophermart"}, args...)
-	t.Cleanup(func() {
-		os.Args = oldArgs
-	})
-
-	for _, key := range []string{
-		"RUN_ADDRESS",
-		"DATABASE_URI",
-		"ACCRUAL_SYSTEM_ADDRESS",
-	} {
-		previousValue, wasSet := os.LookupEnv(key)
-
-		if value, ok := envVars[key]; ok {
-			require.NoError(t, os.Setenv(key, value))
-		} else {
-			require.NoError(t, os.Unsetenv(key))
-		}
-
-		t.Cleanup(func() {
-			if wasSet {
-				_ = os.Setenv(key, previousValue)
-				return
-			}
-			_ = os.Unsetenv(key)
-		})
+	if envVars == nil {
+		envVars = map[string]string{}
 	}
 
-	return config.LoadConfig()
+	return config.LoadConfigFrom(config.LoadOptions{
+		Args:        args,
+		Environment: envVars,
+	})
 }

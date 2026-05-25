@@ -4,14 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"iter"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog/log"
 	"github.com/timaogurtzova/gophermart/internal/config"
 	httpmiddleware "github.com/timaogurtzova/gophermart/internal/http/middleware"
@@ -33,6 +32,11 @@ type RouterHandlers struct {
 	GetWithdrawals http.HandlerFunc
 }
 
+type route struct {
+	pattern string
+	handler http.HandlerFunc
+}
+
 // NewServer создаёт HTTP-сервер с адресом из конфигурации.
 func NewServer(cfg *config.Configuration, router http.Handler) *Server {
 	return &Server{
@@ -45,29 +49,13 @@ func NewServer(cfg *config.Configuration, router http.Handler) *Server {
 
 // NewRouter регистрирует HTTP-маршруты накопительной системы лояльности.
 func NewRouter(handlers RouterHandlers) http.Handler {
-	r := chi.NewRouter()
+	mux := http.NewServeMux()
 
-	r.Use(httpmiddleware.Logging)
-	r.Use(httpmiddleware.GunzipRequest)
-	r.Use(chimiddleware.Compress(5, "application/json", "text/html"))
+	for route := range handlers.routes() {
+		mux.HandleFunc(route.pattern, handlerOrNotImplemented(route.handler))
+	}
 
-	r.Post("/api/user/register", handlerOrNotImplemented(handlers.Register))
-	r.Post("/api/user/login", handlerOrNotImplemented(handlers.Login))
-	r.Post("/api/user/orders", handlerOrNotImplemented(handlers.UploadOrder))
-	r.Get("/api/user/orders", handlerOrNotImplemented(handlers.GetOrders))
-	r.Get("/api/user/balance", handlerOrNotImplemented(handlers.GetBalance))
-	r.Post("/api/user/balance/withdraw", handlerOrNotImplemented(handlers.Withdraw))
-	r.Get("/api/user/withdrawals", handlerOrNotImplemented(handlers.GetWithdrawals))
-
-	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "not found", http.StatusBadRequest)
-	})
-
-	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "method not allowed", http.StatusBadRequest)
-	})
-
-	return r
+	return httpmiddleware.Logging(httpmiddleware.GunzipRequest(httpmiddleware.GzipResponse(mux)))
 }
 
 // Run запускает HTTP-сервер и выполняет graceful shutdown по сигналам ОС.
@@ -120,5 +108,23 @@ func handlerOrNotImplemented(handler http.HandlerFunc) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not implemented", http.StatusNotImplemented)
+	}
+}
+
+func (handlers RouterHandlers) routes() iter.Seq[route] {
+	return func(yield func(route) bool) {
+		for _, route := range []route{
+			{pattern: "POST /api/user/register", handler: handlers.Register},
+			{pattern: "POST /api/user/login", handler: handlers.Login},
+			{pattern: "POST /api/user/orders", handler: handlers.UploadOrder},
+			{pattern: "GET /api/user/orders", handler: handlers.GetOrders},
+			{pattern: "GET /api/user/balance", handler: handlers.GetBalance},
+			{pattern: "POST /api/user/balance/withdraw", handler: handlers.Withdraw},
+			{pattern: "GET /api/user/withdrawals", handler: handlers.GetWithdrawals},
+		} {
+			if !yield(route) {
+				return
+			}
+		}
 	}
 }

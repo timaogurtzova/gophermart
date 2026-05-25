@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strings"
 
 	env "github.com/caarlos0/env/v11"
 	"github.com/rs/zerolog/log"
@@ -18,6 +19,12 @@ type Configuration struct {
 	Server   ServerConfiguration
 	Database DatabaseConfiguration
 	Accrual  AccrualConfiguration
+}
+
+// LoadOptions содержит источники конфигурации для явной загрузки настроек.
+type LoadOptions struct {
+	Args        []string
+	Environment map[string]string
 }
 
 // ServerConfiguration содержит настройки запуска HTTP API.
@@ -48,7 +55,20 @@ func (c AccrualConfiguration) IsConfigured() bool {
 // LoadConfig загружает конфигурацию из аргументов текущего процесса и
 // переменных окружения.
 func LoadConfig() (*Configuration, error) {
-	return loadConfig(os.Args[1:])
+	return LoadConfigFrom(LoadOptions{
+		Args:        os.Args[1:],
+		Environment: environmentMap(os.Environ()),
+	})
+}
+
+// LoadConfigFrom загружает конфигурацию из явно переданных аргументов и
+// переменных окружения.
+func LoadConfigFrom(options LoadOptions) (*Configuration, error) {
+	if options.Environment == nil {
+		options.Environment = map[string]string{}
+	}
+
+	return loadConfig(options)
 }
 
 func defaultConfig() *Configuration {
@@ -59,17 +79,19 @@ func defaultConfig() *Configuration {
 	}
 }
 
-func loadConfig(args []string) (*Configuration, error) {
+func loadConfig(options LoadOptions) (*Configuration, error) {
 	cfg := defaultConfig()
 
-	cliCfg, err := parseCLIArgs(args)
+	cliCfg, err := parseCLIArgs(options.Args)
 	if err != nil {
 		return nil, err
 	}
 
 	applyCLIConfig(cfg, cliCfg)
 
-	envCfg, err := env.ParseAsWithOptions[envConfig](env.Options{})
+	envCfg, err := env.ParseAsWithOptions[envConfig](env.Options{
+		Environment: options.Environment,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -187,4 +209,18 @@ func isValidRunAddress(address string) bool {
 func isValidURL(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.Scheme != "" && u.Host != ""
+}
+
+func environmentMap(values []string) map[string]string {
+	result := make(map[string]string, len(values))
+	for _, value := range values {
+		key, val, ok := strings.Cut(value, "=")
+		if !ok {
+			continue
+		}
+
+		result[key] = val
+	}
+
+	return result
 }

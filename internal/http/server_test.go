@@ -84,15 +84,13 @@ func TestServerRouting(t *testing.T) {
 			name:     "GET /api/user/register -> method not allowed",
 			method:   http.MethodGet,
 			path:     "/api/user/register",
-			wantBody: "method not allowed",
-			wantCode: http.StatusBadRequest,
+			wantCode: http.StatusMethodNotAllowed,
 		},
 		{
 			name:     "GET /unknown -> not found",
 			method:   http.MethodGet,
 			path:     "/unknown",
-			wantBody: "not found",
-			wantCode: http.StatusBadRequest,
+			wantCode: http.StatusNotFound,
 		},
 	}
 
@@ -115,7 +113,9 @@ func TestServerRouting(t *testing.T) {
 			router.ServeHTTP(recorder, req)
 
 			assert.Equal(t, tt.wantCode, recorder.Code)
-			assert.Equal(t, tt.wantBody, strings.TrimSpace(recorder.Body.String()))
+			if tt.wantBody != "" {
+				assert.Equal(t, tt.wantBody, strings.TrimSpace(recorder.Body.String()))
+			}
 			assert.Equal(t, tt.wantCalled, called)
 		})
 	}

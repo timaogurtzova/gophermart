@@ -19,6 +19,7 @@ type Configuration struct {
 	Server   ServerConfiguration
 	Database DatabaseConfiguration
 	Accrual  AccrualConfiguration
+	Auth     AuthConfiguration
 }
 
 // LoadOptions содержит источники конфигурации для явной загрузки настроек.
@@ -50,6 +51,16 @@ type AccrualConfiguration struct {
 // IsConfigured сообщает, что адрес системы расчёта начислений задан.
 func (c AccrualConfiguration) IsConfigured() bool {
 	return c.Address != nil
+}
+
+// AuthConfiguration содержит настройки подписи аутентификационной cookie.
+type AuthConfiguration struct {
+	Secret *string
+}
+
+// IsConfigured сообщает, что секрет подписи аутентификационной cookie задан.
+func (c AuthConfiguration) IsConfigured() bool {
+	return c.Secret != nil
 }
 
 // LoadConfig загружает конфигурацию из аргументов текущего процесса и
@@ -105,12 +116,14 @@ type cliConfig struct {
 	RunAddress           string
 	DatabaseURI          string
 	AccrualSystemAddress string
+	AuthSecret           string
 }
 
 type envConfig struct {
 	RunAddress           *string `env:"RUN_ADDRESS"`
 	DatabaseURI          *string `env:"DATABASE_URI"`
 	AccrualSystemAddress *string `env:"ACCRUAL_SYSTEM_ADDRESS"`
+	AuthSecret           *string `env:"AUTH_SECRET"`
 }
 
 func parseCLIArgs(args []string) (cliConfig, error) {
@@ -122,6 +135,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	fs.StringVar(&cfg.RunAddress, "a", "", "server run address")
 	fs.StringVar(&cfg.DatabaseURI, "d", "", "database uri")
 	fs.StringVar(&cfg.AccrualSystemAddress, "r", "", "accrual system address")
+	fs.StringVar(&cfg.AuthSecret, "s", "", "auth secret")
 
 	if err := fs.Parse(args); err != nil {
 		return cliConfig{}, err
@@ -134,6 +148,7 @@ func applyCLIConfig(cfg *Configuration, cliCfg cliConfig) {
 	cfg.Server.Address = resolveRunAddress(cfg.Server.Address, cliCfg.RunAddress)
 	cfg.Database.URI = resolveDatabaseURI(cliCfg.DatabaseURI)
 	cfg.Accrual.Address = resolveAccrualSystemAddress(cliCfg.AccrualSystemAddress)
+	cfg.Auth.Secret = resolveAuthSecret(cliCfg.AuthSecret)
 }
 
 func applyEnvConfig(cfg *Configuration, envCfg envConfig) {
@@ -161,6 +176,15 @@ func applyEnvConfig(cfg *Configuration, envCfg envConfig) {
 			log.Info().Str("AccrualSystemAddress", *envCfg.AccrualSystemAddress).Msg("Overriding AccrualSystemAddress from environment")
 		} else {
 			log.Warn().Str("AccrualSystemAddress", *envCfg.AccrualSystemAddress).Msg("Invalid AccrualSystemAddress from environment, using previous value")
+		}
+	}
+
+	if envCfg.AuthSecret != nil {
+		if *envCfg.AuthSecret != "" {
+			cfg.Auth.Secret = envCfg.AuthSecret
+			log.Info().Msg("Overriding AuthSecret from environment")
+		} else {
+			log.Warn().Msg("Empty AuthSecret from environment, using previous value")
 		}
 	}
 }
@@ -198,6 +222,16 @@ func resolveAccrualSystemAddress(cliValue string) *string {
 	}
 
 	log.Info().Str("AccrualSystemAddress", "").Msg("Using default AccrualSystemAddress")
+	return nil
+}
+
+func resolveAuthSecret(cliValue string) *string {
+	if cliValue != "" {
+		log.Info().Msg("Overriding AuthSecret from CLI")
+		return &cliValue
+	}
+
+	log.Info().Msg("Using default AuthSecret")
 	return nil
 }
 

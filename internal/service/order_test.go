@@ -3,7 +3,9 @@ package service_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -234,6 +236,71 @@ func TestOrderProcessorProcessPendingOrders(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOrderProcessorProcessPendingOrdersUsesConcurrency(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	started := make(chan struct{}, 3)
+	release := make(chan struct{})
+
+	var active atomic.Int32
+	var maxActive atomic.Int32
+
+	orders := &fakeOrderRepository{
+		findForProcessing: func(_ context.Context, limit int) ([]model.Order, error) {
+			assert.Equal(t, 10, limit)
+			return []model.Order{
+				{ID: 1, UserID: 42, Number: "9278923470", Status: model.OrderStatusNew},
+				{ID: 2, UserID: 42, Number: "12345678903", Status: model.OrderStatusNew},
+				{ID: 3, UserID: 42, Number: "346436439", Status: model.OrderStatusNew},
+			}, nil
+		},
+		updateStatus: func(_ context.Context, _ int64, _ model.OrderStatus) error {
+			return nil
+		},
+	}
+	client := &fakeAccrualClient{
+		getOrder: func(ctx context.Context, _ string) (accrual.Order, error) {
+			current := active.Add(1)
+			defer active.Add(-1)
+
+			for {
+				maximum := maxActive.Load()
+				if current <= maximum || maxActive.CompareAndSwap(maximum, current) {
+					break
+				}
+			}
+
+			started <- struct{}{}
+			select {
+			case <-release:
+			case <-ctx.Done():
+				return accrual.Order{}, ctx.Err()
+			}
+
+			return accrual.Order{Status: accrual.StatusProcessing}, nil
+		},
+	}
+	processor := service.NewOrderProcessor(orders, client)
+
+	done := make(chan error, 1)
+	go func() {
+		done <- processor.ProcessPendingOrders(ctx)
+	}()
+
+	for i := 0; i < 2; i++ {
+		select {
+		case <-started:
+		case <-ctx.Done():
+			require.FailNow(t, "orders are not processed concurrently")
+		}
+	}
+
+	close(release)
+	require.NoError(t, <-done)
+	assert.GreaterOrEqual(t, maxActive.Load(), int32(2))
 }
 
 type fakeOrderRepository struct {

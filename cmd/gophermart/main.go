@@ -61,9 +61,15 @@ func run() error {
 	authService := service.NewAuthService(userRepository)
 	orderService := service.NewOrderUploadService(orderRepository)
 	balanceService := service.NewBalanceAccountService(balanceRepository)
-	authSecret, err := auth.NewRandomSecret(32)
-	if err != nil {
-		return fmt.Errorf("generate auth secret: %w", err)
+	var authSecret []byte
+	if !cfg.Auth.IsConfigured() {
+		log.Warn().Msg("Auth secret is not configured; generated secret will invalidate sessions after restart")
+		authSecret, err = auth.NewRandomSecret(32)
+		if err != nil {
+			return fmt.Errorf("generate auth secret: %w", err)
+		}
+	} else {
+		authSecret = []byte(*cfg.Auth.Secret)
 	}
 
 	authenticator, err := auth.NewAuthenticator(authSecret)

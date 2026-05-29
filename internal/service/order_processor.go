@@ -9,6 +9,7 @@ import (
 	"github.com/timaogurtzova/gophermart/internal/accrual"
 	"github.com/timaogurtzova/gophermart/internal/model"
 	"github.com/timaogurtzova/gophermart/internal/repository"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -76,13 +77,19 @@ func (p *OrderProcessor) ProcessPendingOrders(ctx context.Context) error {
 		return err
 	}
 
-	for _, order := range orders {
-		if err := p.processOrder(ctx, order); err != nil {
-			return err
-		}
+	group, groupCtx := errgroup.WithContext(ctx)
+	if p.limit > 0 {
+		group.SetLimit(p.limit)
 	}
 
-	return nil
+	for _, order := range orders {
+		order := order
+		group.Go(func() error {
+			return p.processOrder(groupCtx, order)
+		})
+	}
+
+	return group.Wait()
 }
 
 func (p *OrderProcessor) processOrder(ctx context.Context, order model.Order) error {

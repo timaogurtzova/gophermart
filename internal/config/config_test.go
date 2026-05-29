@@ -18,6 +18,8 @@ func TestLoadConfigPriority(t *testing.T) {
 		wantDatabaseConfigured   bool
 		wantAccrualSystemAddress string
 		wantAccrualSystemConfig  bool
+		wantAuthSecret           string
+		wantAuthConfigured       bool
 	}{
 		{
 			имя:            "использует значения по умолчанию, когда нет env и флагов",
@@ -25,12 +27,14 @@ func TestLoadConfigPriority(t *testing.T) {
 		},
 		{
 			имя:                      "использует флаги, когда env отсутствуют",
-			args:                     []string{"-a", "localhost:9090", "-d", "postgres://user:password@localhost:5432/gophermart?sslmode=disable", "-r", "http://localhost:8081"},
+			args:                     []string{"-a", "localhost:9090", "-d", "postgres://user:password@localhost:5432/gophermart?sslmode=disable", "-r", "http://localhost:8081", "-s", "cli-secret"},
 			wantRunAddress:           "localhost:9090",
 			wantDatabaseURI:          "postgres://user:password@localhost:5432/gophermart?sslmode=disable",
 			wantDatabaseConfigured:   true,
 			wantAccrualSystemAddress: "http://localhost:8081",
 			wantAccrualSystemConfig:  true,
+			wantAuthSecret:           "cli-secret",
+			wantAuthConfigured:       true,
 		},
 		{
 			имя: "использует переменные окружения, когда флаги отсутствуют",
@@ -38,49 +42,60 @@ func TestLoadConfigPriority(t *testing.T) {
 				"RUN_ADDRESS":            "localhost:7070",
 				"DATABASE_URI":           "postgres://env:password@localhost:5432/gophermart?sslmode=disable",
 				"ACCRUAL_SYSTEM_ADDRESS": "http://localhost:8082",
+				"AUTH_SECRET":            "env-secret",
 			},
 			wantRunAddress:           "localhost:7070",
 			wantDatabaseURI:          "postgres://env:password@localhost:5432/gophermart?sslmode=disable",
 			wantDatabaseConfigured:   true,
 			wantAccrualSystemAddress: "http://localhost:8082",
 			wantAccrualSystemConfig:  true,
+			wantAuthSecret:           "env-secret",
+			wantAuthConfigured:       true,
 		},
 		{
 			имя:  "переменные окружения имеют приоритет над флагами",
-			args: []string{"-a", "localhost:9090", "-d", "postgres://cli:password@localhost:5432/gophermart?sslmode=disable", "-r", "http://localhost:8081"},
+			args: []string{"-a", "localhost:9090", "-d", "postgres://cli:password@localhost:5432/gophermart?sslmode=disable", "-r", "http://localhost:8081", "-s", "cli-secret"},
 			env: map[string]string{
 				"RUN_ADDRESS":            "localhost:7070",
 				"DATABASE_URI":           "postgres://env:password@localhost:5432/gophermart?sslmode=disable",
 				"ACCRUAL_SYSTEM_ADDRESS": "http://localhost:8082",
+				"AUTH_SECRET":            "env-secret",
 			},
 			wantRunAddress:           "localhost:7070",
 			wantDatabaseURI:          "postgres://env:password@localhost:5432/gophermart?sslmode=disable",
 			wantDatabaseConfigured:   true,
 			wantAccrualSystemAddress: "http://localhost:8082",
 			wantAccrualSystemConfig:  true,
+			wantAuthSecret:           "env-secret",
+			wantAuthConfigured:       true,
 		},
 		{
 			имя:                      "разбирает поддерживаемые cli-флаги в формате через равно",
-			args:                     []string{"-a=localhost:6060", "-d=postgres://user:password@localhost:5432/gophermart?sslmode=disable", "-r=http://localhost:8083"},
+			args:                     []string{"-a=localhost:6060", "-d=postgres://user:password@localhost:5432/gophermart?sslmode=disable", "-r=http://localhost:8083", "-s=cli-secret"},
 			wantRunAddress:           "localhost:6060",
 			wantDatabaseURI:          "postgres://user:password@localhost:5432/gophermart?sslmode=disable",
 			wantDatabaseConfigured:   true,
 			wantAccrualSystemAddress: "http://localhost:8083",
 			wantAccrualSystemConfig:  true,
+			wantAuthSecret:           "cli-secret",
+			wantAuthConfigured:       true,
 		},
 		{
 			имя:  "пустые значения из окружения не отключают настроенные флаги",
-			args: []string{"-a", "localhost:9090", "-d", "postgres://cli:password@localhost:5432/gophermart?sslmode=disable", "-r", "http://localhost:8081"},
+			args: []string{"-a", "localhost:9090", "-d", "postgres://cli:password@localhost:5432/gophermart?sslmode=disable", "-r", "http://localhost:8081", "-s", "cli-secret"},
 			env: map[string]string{
 				"RUN_ADDRESS":            "",
 				"DATABASE_URI":           "",
 				"ACCRUAL_SYSTEM_ADDRESS": "",
+				"AUTH_SECRET":            "",
 			},
 			wantRunAddress:           "localhost:9090",
 			wantDatabaseURI:          "postgres://cli:password@localhost:5432/gophermart?sslmode=disable",
 			wantDatabaseConfigured:   true,
 			wantAccrualSystemAddress: "http://localhost:8081",
 			wantAccrualSystemConfig:  true,
+			wantAuthSecret:           "cli-secret",
+			wantAuthConfigured:       true,
 		},
 	}
 
@@ -104,6 +119,14 @@ func TestLoadConfigPriority(t *testing.T) {
 			} else {
 				require.NotNil(t, cfg.Accrual.Address)
 				assert.Equal(t, tt.wantAccrualSystemAddress, *cfg.Accrual.Address)
+			}
+
+			assert.Equal(t, tt.wantAuthConfigured, cfg.Auth.IsConfigured())
+			if tt.wantAuthSecret == "" {
+				assert.Nil(t, cfg.Auth.Secret)
+			} else {
+				require.NotNil(t, cfg.Auth.Secret)
+				assert.Equal(t, tt.wantAuthSecret, *cfg.Auth.Secret)
 			}
 		})
 	}
